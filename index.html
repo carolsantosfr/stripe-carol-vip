@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pagamento com Stripe</title>
+    <!-- 1. Carregar o script do Stripe.js -->
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0; padding: 20px; box-sizing: border-box;
+        }
+        .container {
+            background-color: white; padding: 40px; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); width: 100%;
+            max-width: 400px; text-align: center;
+        }
+        h1, h2, p { color: #333; }
+        h1 { font-size: 1.8rem; margin-top: 0; }
+        .price {
+            font-size: 2.5rem; font-weight: bold; color: #6772e5;
+            margin: 10px 0 20px 0;
+        }
+        /* Estilos para o formulário do Stripe Elements */
+        #payment-form { margin-top: 30px; text-align: left; }
+        #card-element {
+            border: 1px solid #ccc; border-radius: 8px;
+            padding: 12px; margin-bottom: 20px;
+        }
+        #card-errors {
+            color: #dc3545; font-size: 0.9rem;
+            margin-top: -10px; margin-bottom: 10px; height: 1rem;
+        }
+        .btn {
+            display: block; width: 100%; padding: 15px; font-size: 1.1rem;
+            font-weight: bold; border: none; border-radius: 8px;
+            cursor: pointer; transition: all 0.3s ease; margin-top: 15px;
+        }
+        .btn-pay { background-color: #6772e5; color: white; }
+        .btn-pay:disabled { background-color: #a0a0a0; cursor: not-allowed; }
+        .btn-redirect {
+            background-color: #ffc107; color: #212529;
+            text-decoration: none;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1); width: 24px; height: 24px;
+            border-radius: 50%; border-left-color: #fff;
+            animation: spin 1s ease infinite; margin: 0 auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- SEÇÃO 1: FORMULÁRIO DE PAGAMENTO (VISÍVEL NO INÍCIO) -->
+        <div id="paymentSection">
+            <h1>Acesso Exclusivo</h1>
+            <p>Preencha os dados do seu cartão abaixo.</p>
+            <div class="price">R$ 9,90</div>
+            
+            <form id="payment-form">
+                <div id="card-element"><!-- O Stripe Elements será inserido aqui --></div>
+                <div id="card-errors" role="alert"></div>
+                <button id="submit-button" class="btn btn-pay">Pagar Agora</button>
+            </form>
+        </div>
+        
+        <!-- SEÇÃO 2: ACESSO LIBERADO (ESCONDIDA) -->
+        <div id="successSection" class="hidden">
+            <h2>Pagamento Confirmado!</h2>
+            <p>O seu acesso foi liberado. Clique no botão abaixo para aceder ao conteúdo.</p>
+            <a href="https://www.globo.com/" class="btn btn-redirect">
+                Aceder ao Conteúdo
+            </a>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            // --- CONFIGURAÇÃO ---
+            // ⚠️ COLE AQUI A SUA CHAVE PUBLICÁVEL DO STRIPE
+            const stripePublishableKey = 'pk_live_51RkXZZBxBINmBHB4Q2t5ePWqr783Hs8wXgaVHcyGdApbAIB44tXvnhC8CHw2vyxVS9MCJKu2OfYXXZwvCY1P0jLU00NzCL7aTQ'; 
+            const stripe = Stripe(stripePublishableKey);
+
+            const paymentForm = document.getElementById('payment-form');
+            const submitButton = document.getElementById('submit-button');
+            const cardElementContainer = document.getElementById('card-element');
+            const cardErrors = document.getElementById('card-errors');
+            const paymentSection = document.getElementById('paymentSection');
+            const successSection = document.getElementById('successSection');
+
+            let clientSecret;
+            let cardElement;
+
+            // --- INICIALIZAÇÃO ---
+            try {
+                // Pede ao nosso backend uma "intenção de pagamento"
+                const response = await fetch('http://localhost:3000/create-payment-intent', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`O servidor respondeu com um erro: ${response.status}. Detalhes: ${errorText}`);
+                }
+
+                const data = await response.json();
+                if (!data.clientSecret) {
+                    throw new Error('A resposta da API não contém o clientSecret esperado.');
+                }
+                clientSecret = data.clientSecret;
+
+                // Cria e "monta" os campos do cartão na nossa página
+                const elements = stripe.elements();
+                cardElement = elements.create('card', {
+                    style: {
+                        base: {
+                            fontSize: '16px',
+                            color: '#32325d',
+                        },
+                    },
+                });
+                cardElement.mount(cardElementContainer);
+
+                cardElement.on('change', (event) => {
+                    cardErrors.textContent = event.error ? event.error.message : '';
+                });
+
+            } catch (error) {
+                console.error('Erro na inicialização:', error);
+                cardErrors.textContent = 'Não foi possível carregar o formulário. Verifique se o servidor local está em execução e tente recarregar a página.';
+            }
+
+            // --- SUBMISSÃO DO FORMULÁRIO ---
+            paymentForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                setLoading(true);
+
+                if (!cardElement) {
+                    cardErrors.textContent = 'O formulário do cartão não foi inicializado corretamente.';
+                    setLoading(false);
+                    return;
+                }
+
+                // Confirma o pagamento usando o "clientSecret" e os dados do cartão
+                const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+                    payment_method: {
+                        card: cardElement,
+                    },
+                });
+
+                if (error) {
+                    cardErrors.textContent = error.message;
+                    setLoading(false);
+                } else if (paymentIntent.status === 'succeeded') {
+                    console.log('Pagamento realizado com sucesso!', paymentIntent);
+                    paymentSection.classList.add('hidden');
+                    successSection.classList.remove('hidden');
+                }
+            });
+
+            // --- FUNÇÃO AUXILIAR PARA O ESTADO DE CARREGAMENTO ---
+            function setLoading(isLoading) {
+                if (isLoading) {
+                    submitButton.disabled = true;
+                    submitButton.innerHTML = '<div class="spinner"></div>';
+                } else {
+                    submitButton.disabled = false;
+                    submitButton.textContent = 'Pagar Agora';
+                }
+            }
+        });
+    </script>
+</body>
+</html>

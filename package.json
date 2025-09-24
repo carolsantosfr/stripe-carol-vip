@@ -1,0 +1,23 @@
+{
+  "name": "stripe-backend",
+  "version": "1.0.0",
+  "description": "Servidor para processar pagamentos com Stripe.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "stripe",
+    "payment",
+    "backend"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "stripe": "^11.5.0"
+  }
+}
+
