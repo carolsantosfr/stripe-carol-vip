@@ -28,9 +28,9 @@
             margin: 10px 0 20px 0;
         }
         #payment-form { margin-top: 30px; text-align: left; }
+        /* O contêiner para o Payment Element não precisa de estilos, o Stripe cuida disso */
         #payment-element {
-             border: 1px solid #ccc; border-radius: 8px;
-             padding: 12px; margin-bottom: 20px;
+             margin-bottom: 20px;
         }
         #error-message {
             color: #dc3545; font-size: 0.9rem;
@@ -120,12 +120,21 @@
                         throw new Error('O clientSecret não foi recebido do servidor.');
                     }
                     
-                    const appearance = { theme: 'stripe' };
-                    elements = stripe.elements({ appearance, clientSecret });
-
-                    const paymentElementOptions = { layout: "tabs" };
-                    const paymentElement = elements.create("payment", paymentElementOptions);
-                    paymentElement.mount("#payment-element");
+                    // --- NOVO CÓDIGO DO FORMULÁRIO INTEGRADO AQUI ---
+                    const appearance = { theme: 'stripe' }; // Aparência padrão
+                    const options = {
+                        layout: {
+                            type: 'accordion',
+                            defaultCollapsed: false,
+                            radios: true,
+                            spacedAccordionItems: false
+                        }
+                    };
+                    
+                    elements = stripe.elements({ clientSecret, appearance });
+                    const paymentElement = elements.create('payment', options);
+                    paymentElement.mount('#payment-element');
+                    // --- FIM DO NOVO CÓDIGO DO FORMULÁRIO ---
 
                 } catch (error) {
                     console.error('Erro na inicialização:', error);
@@ -178,8 +187,17 @@
 
             // --- FUNÇÕES AUXILIARES ---
             function setLoading(isLoading) {
-                submitButton.disabled = isLoading;
-                submitButton.querySelector('#button-text').textContent = isLoading ? 'A processar...' : 'Pagar Agora';
+                const buttonText = submitButton.querySelector('#button-text');
+                if (isLoading) {
+                    submitButton.disabled = true;
+                    // Adiciona o spinner dentro do span, se não existir
+                    if (!submitButton.querySelector('.spinner')) {
+                         buttonText.innerHTML = '<div class="spinner"></div>';
+                    }
+                } else {
+                    submitButton.disabled = false;
+                    buttonText.innerHTML = 'Pagar Agora';
+                }
             }
 
             function showMessage(messageText) {
