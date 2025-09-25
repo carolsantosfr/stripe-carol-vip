@@ -89,7 +89,7 @@
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             // --- CONFIGURAÇÃO ---
-            const stripePublishableKey = 'SUA_CHAVE_PUBLICAVEL_AQUI'; // ⚠️ COLE A SUA CHAVE AQUI
+            const stripePublishableKey = 'pk_live_51RkXZZBxBINmBHB4Q2t5ePWqr783Hs8wXgaVHcyGdApbAIB44tXvnhC8CHw2vyxVS9MCJKu2OfYXXZwvCY1P0jLU00NzCL7aTQ'; // ⚠️ COLE A SUA CHAVE AQUI
             const stripe = Stripe(stripePublishableKey);
 
             const paymentForm = document.getElementById('payment-form');
@@ -105,7 +105,7 @@
 
             async function initialize() {
                 try {
-                    const response = await fetch('http://localhost:3000/create-payment-intent', {
+                    const response = await fetch('https://stripe-carol-vip.vercel.app/create-payment-intent', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                     });
