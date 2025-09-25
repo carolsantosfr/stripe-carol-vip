@@ -64,12 +64,19 @@
         <div id="paymentSection">
             <h1>Acesso Exclusivo</h1>
             <p>Preencha os dados do seu cartão abaixo.</p>
-            <div class="price">R$ 1,00</div>
+            <div class="price">R$ 9,90</div>
             
             <form id="payment-form">
-                <div id="card-element"><!-- O Stripe Elements será inserido aqui --></div>
-                <div id="card-errors" role="alert"></div>
-                <button id="submit-button" class="btn btn-pay">Pagar Agora</button>
+                <!-- O Payment Element do Stripe será inserido aqui -->
+                <div id="payment-element"></div> 
+                
+                <!-- O botão de submissão -->
+                <button id="submit-button" class="btn btn-pay">
+                    <span id="button-text">Pagar Agora</span>
+                </button>
+                
+                <!-- Elemento para mostrar mensagens de erro -->
+                <div id="error-message" role="alert" style="color: #dc3545; margin-top: 10px;"></div>
             </form>
         </div>
         
@@ -83,61 +90,54 @@
         </div>
     </div>
 
+    <!-- SUBSTITUA TODO O CONTEÚDO DA TAG <script> NO SEU index.html POR ISTO -->
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             // --- CONFIGURAÇÃO ---
-            // ⚠️ COLE AQUI A SUA CHAVE PUBLICÁVEL DO STRIPE
-            const stripePublishableKey = 'pk_live_51RkXZZBxBINmBHB4Q2t5ePWqr783Hs8wXgaVHcyGdApbAIB44tXvnhC8CHw2vyxVS9MCJKu2OfYXXZwvCY1P0jLU00NzCL7aTQ'; 
+            const stripePublishableKey = 'SUA_CHAVE_PUBLICAVEL_AQUI'; 
             const stripe = Stripe(stripePublishableKey);
 
             const paymentForm = document.getElementById('payment-form');
             const submitButton = document.getElementById('submit-button');
-            const cardElementContainer = document.getElementById('card-element');
-            const cardErrors = document.getElementById('card-errors');
+            const errorMessage = document.getElementById('error-message');
             const paymentSection = document.getElementById('paymentSection');
             const successSection = document.getElementById('successSection');
 
-            let clientSecret;
-            let cardElement;
+            let elements; // Para guardar a instância dos elementos
 
             // --- INICIALIZAÇÃO ---
-            try {
-                // Pede ao nosso backend uma "intenção de pagamento"
-                const response = await fetch('https://stripe-carol-vip.vercel.app/create-payment-intent', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                });
+            // Pede ao nosso backend uma "intenção de pagamento" assim que a página carrega
+            initialize();
 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`O servidor respondeu com um erro: ${response.status}. Detalhes: ${errorText}`);
+            async function initialize() {
+                try {
+                    const response = await fetch('http://localhost:3000/create-payment-intent', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Falha ao obter o client secret do servidor.');
+                    }
+
+                    const { clientSecret } = await response.json();
+
+                    // --- AQUI ENTRA O SEU NOVO CÓDIGO, JÁ INTEGRADO ---
+                    const appearance = { theme: 'stripe' };
+                    elements = stripe.elements({ appearance, clientSecret });
+
+                    const paymentElementOptions = {
+                        layout: "tabs" // Outras opções: "accordion", "tabs"
+                    };
+
+                    const paymentElement = elements.create("payment", paymentElementOptions);
+                    paymentElement.mount("#payment-element");
+                    // ---------------------------------------------------
+
+                } catch (error) {
+                    console.error('Erro na inicialização:', error);
+                    errorMessage.textContent = 'Não foi possível carregar o formulário de pagamento. Tente recarregar a página.';
                 }
-
-                const data = await response.json();
-                if (!data.clientSecret) {
-                    throw new Error('A resposta da API não contém o clientSecret esperado.');
-                }
-                clientSecret = data.clientSecret;
-
-                // Cria e "monta" os campos do cartão na nossa página
-                const elements = stripe.elements();
-                cardElement = elements.create('card', {
-                    style: {
-                        base: {
-                            fontSize: '16px',
-                            color: '#32325d',
-                        },
-                    },
-                });
-                cardElement.mount(cardElementContainer);
-
-                cardElement.on('change', (event) => {
-                    cardErrors.textContent = event.error ? event.error.message : '';
-                });
-
-            } catch (error) {
-                console.error('Erro na inicialização:', error);
-                cardErrors.textContent = 'Não foi possível carregar o formulário. Verifique se o servidor local está em execução e tente recarregar a página.';
             }
 
             // --- SUBMISSÃO DO FORMULÁRIO ---
@@ -145,38 +145,46 @@
                 e.preventDefault();
                 setLoading(true);
 
-                if (!cardElement) {
-                    cardErrors.textContent = 'O formulário do cartão não foi inicializado corretamente.';
-                    setLoading(false);
-                    return;
-                }
-
-                // Confirma o pagamento usando o "clientSecret" e os dados do cartão
-                const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
-                    payment_method: {
-                        card: cardElement,
+                // Usa o novo método stripe.confirmPayment
+                const { error } = await stripe.confirmPayment({
+                    elements,
+                    confirmParams: {
+                        // URL para onde o cliente será redirecionado após o pagamento.
+                        // Pode ser uma página de "Obrigado".
+                        return_url: window.location.href.split('?')[0] + '?payment_successful=true',
                     },
                 });
 
-                if (error) {
-                    cardErrors.textContent = error.message;
-                    setLoading(false);
-                } else if (paymentIntent.status === 'succeeded') {
-                    console.log('Pagamento realizado com sucesso!', paymentIntent);
-                    paymentSection.classList.add('hidden');
-                    successSection.classList.remove('hidden');
-                }
-            });
-
-            // --- FUNÇÃO AUXILIAR PARA O ESTADO DE CARREGAMENTO ---
-            function setLoading(isLoading) {
-                if (isLoading) {
-                    submitButton.disabled = true;
-                    submitButton.innerHTML = '<div class="spinner"></div>';
+                // Este ponto só é alcançado se houver um erro imediato (ex: falha de rede).
+                // Se o pagamento necessitar de uma etapa extra (como 3D Secure), o utilizador será redirecionado.
+                if (error.type === "card_error" || error.type === "validation_error") {
+                    showMessage(error.message);
                 } else {
-                    submitButton.disabled = false;
-                    submitButton.textContent = 'Pagar Agora';
+                    showMessage("Ocorreu um erro inesperado.");
                 }
+
+                setLoading(false);
+            });
+            
+            // A verificação do estado do pagamento é feita após o redirecionamento
+            // ou pode ser implementada com webhooks no backend.
+            // Para simular o sucesso aqui, podemos verificar a URL.
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('payment_successful') === 'true') {
+                paymentSection.classList.add('hidden');
+                successSection.classList.remove('hidden');
+            }
+
+
+            // --- FUNÇÕES AUXILIARES ---
+            function setLoading(isLoading) {
+                submitButton.disabled = isLoading;
+                submitButton.querySelector('#button-text').textContent = isLoading ? 'A processar...' : 'Pagar Agora';
+            }
+
+            function showMessage(messageText) {
+                errorMessage.textContent = messageText;
+                setTimeout(() => { errorMessage.textContent = ""; }, 4000);
             }
         });
     </script>
